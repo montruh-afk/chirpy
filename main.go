@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/montruh-afk/chirpy/internal"
 )
@@ -17,11 +18,13 @@ func main () {
 		Addr: ":8080",
 		Handler: handler,
 	}
+	cfg := &internal.ApiConfig{
+		FileServerHits: atomic.Int32{},
+	}
 
-	root := http.Dir(".")
-	reqPath := http.StripPrefix("/app", http.FileServer(root))
-	handler.Handle("/app/", reqPath)
-	handler.HandleFunc("/healthz", internal.ReadinessEndpoint)
-	log.Printf("Serving on port %s\n", s.Addr)
+	startUp(handler, cfg)
+
+	
+	log.Printf("Serving on port %s...\n", s.Addr)
 	log.Fatal(s.ListenAndServe())
 }

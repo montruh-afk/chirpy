@@ -35,9 +35,7 @@ func ValidateChirp(w http.ResponseWriter, r *http.Request) {
 		return
 
 	} else if len(parameters.Body) <= maxChirpLength{
-		respondWithJson(w, 200, isValid{
-			Valid: true,
-		})
+		checkProfane(w, parameters.Body)
 		return
 	}
 }

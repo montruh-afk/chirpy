@@ -1,3 +1,4 @@
 *.env
-initializer.go
 chirpy
+*.rest
+test.http

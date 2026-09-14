@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"net/http"
 	"sync/atomic"
+	"github.com/montruh-afk/chirpy/internal/database"
 )
 
 type ApiConfig struct {
 	FileServerHits atomic.Int32
+	Db *database.Queries
 }
 
 const (

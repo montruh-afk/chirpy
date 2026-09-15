@@ -2,12 +2,21 @@ package internal
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
+
+	"github.com/google/uuid"
 )
 
 const (
 	maxChirpLength = 140
 )
+
+type chirp struct {
+	Body   string `json:"body"`
+	UserID uuid.UUID `json:"user_id"`
+}
 
 func ReadinessEndpoint(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -15,27 +24,21 @@ func ReadinessEndpoint(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(http.StatusText(http.StatusOK)))
 }
 
-func ValidateChirp(w http.ResponseWriter, r *http.Request) {
-	// temporary struct to decode request body (alternative to casting []byte to string then extracting string value after the "value" title )
-	type params struct {
-		Body string `json:"body"`
-	}
+func validateChirp(r *http.Request) (chirp, error) {
+	params := chirp{}
 
-	type isValid struct {
-		Valid bool `json:"valid"`
-	}
-
-	parameters := params{}
 	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&parameters); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Something went wrong while attempting to decode json", err)
+	if err := decoder.Decode(&params); err != nil {
+		log.Println(err)
+		return chirp{}, fmt.Errorf("Something went wrong while attempting to decode json: %s", err)
 	}
-	if len(parameters.Body) > maxChirpLength {
-		respondWithError(w, 400, "Chirp is too long", nil)
-		return
 
-	} else if len(parameters.Body) <= maxChirpLength{
-		checkProfane(w, parameters.Body)
-		return
+	if len(params.Body) > maxChirpLength {
+		return params, fmt.Errorf("Chirp is too long\n")
 	}
+
+	if len(params.Body) <= maxChirpLength {
+		params.Body = checkProfane(params.Body)
+	}
+	return params, nil
 }

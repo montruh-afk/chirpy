@@ -13,7 +13,7 @@ import (
 type ApiConfig struct {
 	FileServerHits atomic.Int32
 	Db             *database.Queries
-	Platform string
+	Platform       string
 }
 
 const (
@@ -59,7 +59,7 @@ func (cfg *ApiConfig) Reset(w http.ResponseWriter, r *http.Request) {
 func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	type getuser struct {
-		Email string`json:"email"`
+		Email string `json:"email"`
 	}
 
 	createUser := getuser{}
@@ -82,4 +82,27 @@ func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJson(w, http.StatusCreated, user)
 
+}
+
+func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
+	params, err := validateChirp(r)
+	if err != nil {
+		log.Fatal(err)
+		respondWithError(w, 500, "Something went wrong", err)
+		return
+	}
+	dbChirp := database.CreateChirpParams{
+		UserID: params.UserID,
+		Body: params.Body,
+	}
+	
+	ctx := r.Context()
+	data, err := cfg.Db.CreateChirp(ctx, dbChirp)
+	if err != nil {
+		log.Printf("Something went wrong: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Could not create chirp", err)
+		return
+	}
+	
+	respondWithJson(w, http.StatusCreated, data)
 }

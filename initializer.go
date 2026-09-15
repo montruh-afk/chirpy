@@ -12,4 +12,5 @@ func startUp(handler *http.ServeMux, cfg *internal.ApiConfig) {
 	handler.HandleFunc("GET /api/healthz", internal.ReadinessEndpoint)
 	handler.HandleFunc("POST /admin/reset", cfg.Reset)
 	handler.HandleFunc("POST /api/validate_chirp", internal.ValidateChirp)
+	handler.HandleFunc("POST /api/users", cfg.CreateUser)
 }

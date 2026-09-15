@@ -3,3 +3,4 @@ chirpy
 *.rest
 test.http
 sql/schema/*.sh
+layout/

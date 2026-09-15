@@ -6,41 +6,60 @@ import (
 	"os"
 	"sync/atomic"
 
+	"database/sql"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/montruh-afk/chirpy/internal"
 	"github.com/montruh-afk/chirpy/internal/database"
-	"database/sql"
 )
 
+func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatalf("Error loading .env file: %v", err)
+	}
 
-
-
-func main () {
-	godotenv.Load()
 	dbURL := os.Getenv("DBURL")
+	if dbURL == "" {
+		log.Fatal("DBURL environment variable is not set")
+	}
+
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Printf("Something went wrong while attemptiong to access our records: %s", err)
 		os.Exit(1)
 	}
-	dbQueries := database.New(db)
 
+	defer db.Close()
+
+
+	//ping first to avoid panic after server has started up
+	if err := db.Ping(); err != nil {
+		log.Fatalf("Database unreachable: %v", err)
+	}
+
+	dbQueries := database.New(db)
 
 	handler := http.NewServeMux()
 
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	
 	s := &http.Server{
-		Addr: os.Getenv("PORT"),
+		Addr:    ":" + port,
 		Handler: handler,
 	}
+
 	cfg := &internal.ApiConfig{
 		FileServerHits: atomic.Int32{},
-		Db: dbQueries,
+		Db:             dbQueries,
+		Platform:       os.Getenv("PLATFORM"),
 	}
 
 	startUp(handler, cfg)
 
-	
-	log.Printf("Serving on port %s...\n", s.Addr)
+	log.Printf("Serving on port: %s...\n", port)
 	log.Fatal(s.ListenAndServe())
 }

@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"sync/atomic"
-
 	"database/sql"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"

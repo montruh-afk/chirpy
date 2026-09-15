@@ -13,4 +13,6 @@ func startUp(handler *http.ServeMux, cfg *internal.ApiConfig) {
 	handler.HandleFunc("POST /admin/reset", cfg.Reset)
 	handler.HandleFunc("POST /api/users", cfg.CreateUser)
 	handler.HandleFunc("POST /api/chirps", cfg.CreateChirp)
+	handler.HandleFunc("GET /api/chirps", cfg.GetChirps)
+	handler.HandleFunc("GET /api/chirps/{chirpID}", cfg.GetChirp)
 }

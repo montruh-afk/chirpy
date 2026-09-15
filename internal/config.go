@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync/atomic"
+	"github.com/google/uuid"
 	"github.com/montruh-afk/chirpy/internal/database"
 )
 
@@ -105,4 +106,46 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	respondWithJson(w, http.StatusCreated, data)
+}
+
+
+func (cfg *ApiConfig) GetChirps(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	chirps, err := cfg.Db.GetChirps(ctx)
+	if err != nil {
+		log.Println(err)
+		respondWithError(w, http.StatusInternalServerError, "Something went wrong while attempting to retrieve from server", err)
+		return
+	}
+
+	respondWithJson(w, 200, chirps)
+}
+
+func (cfg *ApiConfig) GetChirp(w http.ResponseWriter, r *http.Request) {
+	param := r.PathValue("chirpID")
+	if len(param) < 1 {
+		respondWithError(w, 404, "Required parameter ommited", nil)
+		return
+	}
+	if err := uuid.Validate(param); err != nil {
+		log.Println(err)
+		respondWithError(w, 404, "Invalid id provided", nil)
+		return
+	}
+	id, err := uuid.Parse(param)
+	if err != nil {
+		log.Println(err)
+		respondWithError(w, 404, "Invalid id type", nil)
+		return
+	}
+
+	ctx := r.Context()
+
+	chirp, err := cfg.Db.GetChirp(ctx, id)
+	if err != nil {
+		log.Println(err)
+		respondWithError(w, 404, "Something went wrong while attempting to fetch from our records", nil)
+		return
+	}
+	respondWithJson(w, 200, chirp)
 }

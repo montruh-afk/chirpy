@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"strings"
 	"sync/atomic"
+
 	"github.com/google/uuid"
+	auth "github.com/montruh-afk/chirpy/internal/authentication"
 	"github.com/montruh-afk/chirpy/internal/database"
 )
 
@@ -60,7 +62,8 @@ func (cfg *ApiConfig) Reset(w http.ResponseWriter, r *http.Request) {
 func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	type getuser struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	createUser := getuser{}
@@ -74,10 +77,24 @@ func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "Invalid email", nil)
 		return
 	}
-	user, err := cfg.Db.CreateUser(ctx, createUser.Email)
+	if len(createUser.Password) < 6 {
+		respondWithError(w, http.StatusBadRequest, "Password length should be 8 or more characters", nil)
+		return
+	}
+	hashedPass, err := auth.HashPassword(createUser.Password)
 	if err != nil {
-		log.Printf("Something went wrong: %s", err)
-		respondWithError(w, 500, "Something broke while reaching our records", err)
+		respondWithError(w, http.StatusForbidden, "Something went wrong", err)
+		return
+	}
+
+	deets := database.CreateUserParams{
+		Email:          createUser.Email,
+		HashedPassword: hashedPass,
+	}
+
+	user, err := cfg.Db.CreateUser(ctx, deets)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create user", err)
 		return
 	}
 
@@ -94,9 +111,9 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 	}
 	dbChirp := database.CreateChirpParams{
 		UserID: params.UserID,
-		Body: params.Body,
+		Body:   params.Body,
 	}
-	
+
 	ctx := r.Context()
 	data, err := cfg.Db.CreateChirp(ctx, dbChirp)
 	if err != nil {
@@ -104,10 +121,9 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Could not create chirp", err)
 		return
 	}
-	
+
 	respondWithJson(w, http.StatusCreated, data)
 }
-
 
 func (cfg *ApiConfig) GetChirps(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -148,4 +164,39 @@ func (cfg *ApiConfig) GetChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondWithJson(w, 200, chirp)
+}
+
+func (cfg *ApiConfig) HandlerLogin(w http.ResponseWriter, r *http.Request) {
+	type user struct {
+		Email    string `json:"email"`
+		Password string `json:"Password"`
+	}
+
+	//user instance
+	deets := user{}
+
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&deets); err != nil {
+		respondWithError(w, 500, "Something went wrong while attempting to handle incoming request", err)
+		return
+	}
+
+	ctx := r.Context()
+	userDB, err := cfg.Db.GetuserByEmail(ctx, deets.Email)
+	if err != nil {
+		respondWithError(w, 401, "Failed to authenticate", err)
+		return
+	}
+
+	match, err := auth.CheckPasswordHash(deets.Password, userDB.HashedPassword)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Something went wrong", err)
+	}
+
+	if !match {
+		respondWithError(w, 401, "Incorrect email or password", nil)
+		return
+	}
+	respondWithJson(w, 200, userDB)
+
 }

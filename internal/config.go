@@ -60,7 +60,6 @@ func (cfg *ApiConfig) Reset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	type getuser struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -77,10 +76,19 @@ func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "Invalid email", nil)
 		return
 	}
+
+	ctx := r.Context()
+	//Chech if the user exists to avoid panic from sql (unique key constrain violation)
+	if _, err := cfg.Db.GetuserByEmail(ctx, createUser.Email); err == nil {
+		respondWithError(w, http.StatusConflict, "An account with that email already exists", nil)
+		return
+	}
+
 	if len(createUser.Password) < 6 {
 		respondWithError(w, http.StatusBadRequest, "Password length should be 8 or more characters", nil)
 		return
 	}
+
 	hashedPass, err := auth.HashPassword(createUser.Password)
 	if err != nil {
 		respondWithError(w, http.StatusForbidden, "Something went wrong", err)
@@ -184,7 +192,8 @@ func (cfg *ApiConfig) HandlerLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userDB, err := cfg.Db.GetuserByEmail(ctx, deets.Email)
 	if err != nil {
-		respondWithError(w, 401, "Failed to authenticate", err)
+		log.Println(err)
+		respondWithError(w, 401, "User does not exist", nil)
 		return
 	}
 

@@ -4,3 +4,4 @@ chirpy
 test.http
 *.sh
 layout/
+auth_test.go

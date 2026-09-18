@@ -12,16 +12,17 @@ import (
 
 type Chirp struct {
 	ID        uuid.UUID `json:"id,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 	Body      string    `json:"body,omitempty"`
 	UserID    uuid.UUID `json:"user_id,omitempty"`
 }
 
 type User struct {
 	ID             uuid.UUID `json:"id,omitempty"`
-	CreatedAt      time.Time `json:"created_at,omitempty"`
-	UpdatedAt      time.Time `json:"updated_at,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 	Email          string    `json:"email,omitempty"`
 	HashedPassword string    `json:"-"`
+	Token          string    `json:"token"`
 }

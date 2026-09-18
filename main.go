@@ -55,6 +55,7 @@ func main() {
 		FileServerHits: atomic.Int32{},
 		Db:             dbQueries,
 		Platform:       os.Getenv("PLATFORM"),
+		TknScrt: os.Getenv("HASHTEXT"),
 	}
 
 	startUp(handler, cfg)

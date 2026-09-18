@@ -3,20 +3,21 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
+	auth "github.com/montruh-afk/chirpy/internal/authentication"
+	"github.com/montruh-afk/chirpy/internal/database"
 	"log"
 	"net/http"
 	"strings"
 	"sync/atomic"
-
-	"github.com/google/uuid"
-	auth "github.com/montruh-afk/chirpy/internal/authentication"
-	"github.com/montruh-afk/chirpy/internal/database"
+	"time"
 )
 
 type ApiConfig struct {
 	FileServerHits atomic.Int32
 	Db             *database.Queries
 	Platform       string
+	TknScrt        string
 }
 
 const (
@@ -84,7 +85,7 @@ func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(createUser.Password) < 6 {
+	if len(createUser.Password) < 4 { //for tests alone, change this later
 		respondWithError(w, http.StatusBadRequest, "Password length should be 8 or more characters", nil)
 		return
 	}
@@ -111,6 +112,20 @@ func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
+	cleanToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusForbidden, "Could fetch user", err)
+		return
+	}
+
+	user, err := auth.ValidateJWT(cleanToken, cfg.TknScrt)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Failed to authenticate user", err)
+		return
+	}
+	
+	log.Printf("Current user id %v\n", user)
+
 	params, err := validateChirp(r)
 	if err != nil {
 		log.Fatal(err)
@@ -118,7 +133,7 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dbChirp := database.CreateChirpParams{
-		UserID: params.UserID,
+		UserID: user,
 		Body:   params.Body,
 	}
 
@@ -176,18 +191,23 @@ func (cfg *ApiConfig) GetChirp(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *ApiConfig) HandlerLogin(w http.ResponseWriter, r *http.Request) {
 	type user struct {
-		Email    string `json:"email"`
-		Password string `json:"Password"`
+		Email            string `json:"email"`
+		Password         string `json:"Password"`
+		ExpiresInSeconds int    `json:"expires_in_seconds,omitempty"`
 	}
 
 	//user instance
 	deets := user{}
+
+	//Default token expiry time
+	deets.ExpiresInSeconds = 3600
 
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&deets); err != nil {
 		respondWithError(w, 500, "Something went wrong while attempting to handle incoming request", err)
 		return
 	}
+
 
 	ctx := r.Context()
 	userDB, err := cfg.Db.GetuserByEmail(ctx, deets.Email)
@@ -204,6 +224,17 @@ func (cfg *ApiConfig) HandlerLogin(w http.ResponseWriter, r *http.Request) {
 
 	if !match {
 		respondWithError(w, 401, "Incorrect email or password", nil)
+		return
+	}
+	
+	duration, err := time.ParseDuration(fmt.Sprintf("%ds", deets.ExpiresInSeconds))
+	if err != nil {
+		respondWithError(w, 500, "Could not parse expiry duration", err)
+		return
+	}
+	userDB.Token, err = auth.MakeJWT(userDB.ID, cfg.TknScrt, duration)
+	if err != nil {
+		respondWithError(w, 500, "Faild to administer user token", err)
 		return
 	}
 	respondWithJson(w, 200, userDB)

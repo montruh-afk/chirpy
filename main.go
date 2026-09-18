@@ -56,6 +56,11 @@ func main() {
 		Db:             dbQueries,
 		Platform:       os.Getenv("PLATFORM"),
 		TknScrt: os.Getenv("HASHTEXT"),
+		Exp: os.Getenv("EXP"),
+	}
+
+	if len(cfg.Exp) < 1 {
+		cfg.Exp = "3600s"
 	}
 
 	startUp(handler, cfg)

@@ -8,7 +8,7 @@ import (
 
 func respondWithError(w http.ResponseWriter, code int, msg string, err error) {
 	if err != nil {
-		log.Panicln(err)
+		log.Println(err)
 	}
 
 	if code > 499 {
@@ -26,7 +26,7 @@ func respondWithJson(w http.ResponseWriter, code int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	dat, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("Somethung went wrong: %s", err)
+		log.Printf("Something went wrong: %s", err)
 		w.WriteHeader(500)
 		return
 	}

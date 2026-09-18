@@ -61,6 +61,52 @@ func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const getUserByID = `-- name: GetUserByID :one
+
+SELECT id, email FROM users WHERE id = $1
+`
+
+type GetUserByIDRow struct {
+	ID    uuid.UUID `json:"id"`
+	Email string    `json:"email"`
+}
+
+func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getUserByID, id)
+	var i GetUserByIDRow
+	err := row.Scan(&i.ID, &i.Email)
+	return i, err
+}
+
+const getUserFromRefreshToken = `-- name: GetUserFromRefreshToken :one
+
+
+SELECT users.id, users.created_at, users.updated_at, users.email, refresh_tokens.token FROM refresh_tokens 
+INNER JOIN users ON refresh_tokens.user_id = users.id 
+WHERE refresh_tokens.token = $1
+`
+
+type GetUserFromRefreshTokenRow struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
+	Token     string    `json:"token"`
+}
+
+func (q *Queries) GetUserFromRefreshToken(ctx context.Context, token string) (GetUserFromRefreshTokenRow, error) {
+	row := q.db.QueryRowContext(ctx, getUserFromRefreshToken, token)
+	var i GetUserFromRefreshTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.Token,
+	)
+	return i, err
+}
+
 const getuserByEmail = `-- name: GetuserByEmail :one
 
 

@@ -29,7 +29,7 @@ func validateChirp(r *http.Request) (chirp, error) {
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&params); err != nil {
 		log.Println(err)
-		return chirp{}, fmt.Errorf("Something went wrong while attempting to decode json: %s", err)
+		return params, fmt.Errorf("Something went wrong while attempting to decode json: %s", err)
 	}
 
 	if len(params.Body) > maxChirpLength {

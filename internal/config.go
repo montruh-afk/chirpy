@@ -18,6 +18,11 @@ type ApiConfig struct {
 	Db             *database.Queries
 	Platform       string
 	TknScrt        string
+	Exp            string
+}
+
+type Duration struct {
+	duration time.Duration
 }
 
 const (
@@ -107,37 +112,43 @@ func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJson(w, http.StatusCreated, user)
+	respondWithJson(w, http.StatusCreated, &user)
 
 }
 
 func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 	cleanToken, err := auth.GetBearerToken(r.Header)
 	if err != nil {
-		respondWithError(w, http.StatusForbidden, "Could fetch user", err)
+		respondWithError(w, http.StatusForbidden, "Could not fetch user", err)
 		return
 	}
 
-	user, err := auth.ValidateJWT(cleanToken, cfg.TknScrt)
+	userid, err := auth.ValidateJWT(cleanToken, cfg.TknScrt)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "Failed to authenticate user", err)
 		return
 	}
-	
-	log.Printf("Current user id %v\n", user)
+
+	log.Printf("Current user id %v\n", userid)
 
 	params, err := validateChirp(r)
 	if err != nil {
-		log.Fatal(err)
-		respondWithError(w, 500, "Something went wrong", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid request body", err)
+		return
+	}
+	ctx := r.Context()
+	//Verify user
+	valid, err := cfg.Db.GetUserByID(ctx, userid)
+	if err != nil {
+		respondWithError(w, 401, "User does not exist", err)
 		return
 	}
 	dbChirp := database.CreateChirpParams{
-		UserID: user,
+		UserID: valid.ID,
 		Body:   params.Body,
 	}
 
-	ctx := r.Context()
+	
 	data, err := cfg.Db.CreateChirp(ctx, dbChirp)
 	if err != nil {
 		log.Printf("Something went wrong: %s", err)
@@ -145,7 +156,7 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJson(w, http.StatusCreated, data)
+	respondWithJson(w, http.StatusCreated, &data)
 }
 
 func (cfg *ApiConfig) GetChirps(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +168,7 @@ func (cfg *ApiConfig) GetChirps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJson(w, 200, chirps)
+	respondWithJson(w, 200, &chirps)
 }
 
 func (cfg *ApiConfig) GetChirp(w http.ResponseWriter, r *http.Request) {
@@ -186,34 +197,28 @@ func (cfg *ApiConfig) GetChirp(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 404, "Something went wrong while attempting to fetch from our records", nil)
 		return
 	}
-	respondWithJson(w, 200, chirp)
+	respondWithJson(w, 200, &chirp)
 }
 
 func (cfg *ApiConfig) HandlerLogin(w http.ResponseWriter, r *http.Request) {
-	type user struct {
-		Email            string `json:"email"`
-		Password         string `json:"Password"`
-		ExpiresInSeconds int    `json:"expires_in_seconds,omitempty"`
+	type login struct {
+		Email    string `json:"email"`
+		Password string `json:"Password"`
 	}
 
 	//user instance
-	deets := user{}
-
-	//Default token expiry time
-	deets.ExpiresInSeconds = 3600
-
+	deets := login{}
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&deets); err != nil {
 		respondWithError(w, 500, "Something went wrong while attempting to handle incoming request", err)
 		return
 	}
 
-
 	ctx := r.Context()
 	userDB, err := cfg.Db.GetuserByEmail(ctx, deets.Email)
 	if err != nil {
 		log.Println(err)
-		respondWithError(w, 401, "User does not exist", nil)
+		respondWithError(w, 401, "Incorrect email or password", nil)
 		return
 	}
 
@@ -226,17 +231,83 @@ func (cfg *ApiConfig) HandlerLogin(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 401, "Incorrect email or password", nil)
 		return
 	}
-	
-	duration, err := time.ParseDuration(fmt.Sprintf("%ds", deets.ExpiresInSeconds))
+
+	params := &Duration{}
+	parseDuration(params, w, cfg.Exp)
+
+	userDB.Token, err = auth.MakeJWT(userDB.ID, cfg.TknScrt, params.duration)
 	if err != nil {
-		respondWithError(w, 500, "Could not parse expiry duration", err)
+		respondWithError(w, 500, "Failed to administer user token", err)
 		return
 	}
-	userDB.Token, err = auth.MakeJWT(userDB.ID, cfg.TknScrt, duration)
-	if err != nil {
-		respondWithError(w, 500, "Faild to administer user token", err)
+
+	refresher := auth.MakeRefreshToken()
+	if err := cfg.Db.StoreRefreshToken(ctx, database.StoreRefreshTokenParams{
+		Token:     refresher,
+		UserID:    userDB.ID,
+		ExpiresAt: time.Now().AddDate(0, 0, 60),
+	}); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not validate token", err)
 		return
 	}
-	respondWithJson(w, 200, userDB)
+	userDB.RefreshToken = refresher
+
+	respondWithJson(w, 200, &userDB)
+
+}
+
+func (cfg *ApiConfig) Refresh(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 500, "Could not validate token", err)
+		return
+	}
+	tok, err := cfg.Db.CheckRefreshToken(r.Context(), token)
+	if err != nil {
+		respondWithError(w, 401, "Failed to authenticate", err)
+		return
+	}
+	if tok.RevokedAt.Valid {
+		respondWithError(w, 401, "Token has been revoked", nil)
+		return
+	}
+
+	if time.Now().Compare(tok.ExpiresAt) >= 0 {
+		respondWithError(w, 401, "Expired token, please log in again", nil)
+		return
+	}
+
+	params := &Duration{}
+	//Helper function to avoid repeating time.ParseDuration()
+	parseDuration(params, w, cfg.Exp)
+	tokn, err := auth.MakeJWT(tok.UserID, cfg.TknScrt, params.duration)
+	if err != nil {
+		respondWithError(w, 500, "Something went wrong", err)
+		return
+	}
+	type response struct {
+		Token string `json:"token"`
+	}
+
+	resp := response{
+		Token: tokn,
+	}
+
+	respondWithJson(w, 200, &resp)
+}
+
+func (cfg *ApiConfig) Revoke(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 500, "Could not validate token", err)
+		return
+	}
+
+	if err := cfg.Db.RevokeToken(r.Context(), token); err != nil {
+		respondWithError(w, 500, "Something broke on our end", err)
+		return
+	}
+
+	respondWithJson(w, 204, nil)
 
 }

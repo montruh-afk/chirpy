@@ -1,8 +1,8 @@
 package main
 
 import (
-	"net/http"
 	"github.com/montruh-afk/chirpy/internal"
+	"net/http"
 )
 
 func startUp(handler *http.ServeMux, cfg *internal.ApiConfig) {
@@ -15,4 +15,6 @@ func startUp(handler *http.ServeMux, cfg *internal.ApiConfig) {
 	handler.HandleFunc("GET /api/chirps", cfg.GetChirps)
 	handler.HandleFunc("GET /api/chirps/{chirpID}", cfg.GetChirp)
 	handler.HandleFunc("POST /api/login", cfg.HandlerLogin)
+	handler.HandleFunc("POST /api/revoke", cfg.Revoke)
+	handler.HandleFunc("POST /api/refresh", cfg.Refresh)
 }

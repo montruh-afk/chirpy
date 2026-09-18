@@ -1,11 +1,13 @@
 package authentication
 
 import (
-	"github.com/alexedwards/argon2id"
-	"runtime"
-	"net/http"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"net/http"
+	"runtime"
 	"strings"
+	"github.com/alexedwards/argon2id"
 )
 
 func HashPassword(pass string) (string, error) {
@@ -35,10 +37,15 @@ func GetBearerToken(headers http.Header) (string, error) {
 	if auth == "" {
 		return auth, errors.New("Unauthorised: Please login in to access features")
 	}
-	if !strings.HasPrefix(strings.ToLower(auth), "bearer ") {
+	if !strings.HasPrefix(auth, "Bearer ") {
 		return "", errors.New("Malformed authorization header received")
 	}
-	token := auth[len("bearer "):]
+	token := strings.Replace(auth, "Bearer", "", 1)
 	return strings.TrimSpace(token), nil
 }
 
+func MakeRefreshToken() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}

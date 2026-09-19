@@ -23,7 +23,7 @@ VALUES (
     $1,
     $2
 )
-RETURNING id, created_at, updated_at, email
+RETURNING id, email, created_at, updated_at
 `
 
 type CreateUserParams struct {
@@ -33,9 +33,9 @@ type CreateUserParams struct {
 
 type CreateUserRow struct {
 	ID        uuid.UUID `json:"id"`
+	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
@@ -43,9 +43,9 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 	var i CreateUserRow
 	err := row.Scan(
 		&i.ID,
+		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.Email,
 	)
 	return i, err
 }
@@ -63,34 +63,35 @@ func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
 
 const getUserByID = `-- name: GetUserByID :one
 
-SELECT id, email FROM users WHERE id = $1
+SELECT id, created_at, updated_at, email, hashed_password FROM users WHERE id = $1
 `
 
-type GetUserByIDRow struct {
-	ID    uuid.UUID `json:"id"`
-	Email string    `json:"email"`
-}
-
-func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow, error) {
+func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	row := q.db.QueryRowContext(ctx, getUserByID, id)
-	var i GetUserByIDRow
-	err := row.Scan(&i.ID, &i.Email)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.HashedPassword,
+	)
 	return i, err
 }
 
 const getUserFromRefreshToken = `-- name: GetUserFromRefreshToken :one
 
 
-SELECT users.id, users.created_at, users.updated_at, users.email, refresh_tokens.token FROM refresh_tokens 
+SELECT users.id, users.email, users.created_at, users.updated_at, refresh_tokens.token FROM refresh_tokens 
 INNER JOIN users ON refresh_tokens.user_id = users.id 
 WHERE refresh_tokens.token = $1
 `
 
 type GetUserFromRefreshTokenRow struct {
 	ID        uuid.UUID `json:"id"`
+	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
 	Token     string    `json:"token"`
 }
 
@@ -99,9 +100,9 @@ func (q *Queries) GetUserFromRefreshToken(ctx context.Context, token string) (Ge
 	var i GetUserFromRefreshTokenRow
 	err := row.Scan(
 		&i.ID,
+		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.Email,
 		&i.Token,
 	)
 	return i, err
@@ -135,4 +136,38 @@ DELETE FROM users
 func (q *Queries) ResetUsers(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, resetUsers)
 	return err
+}
+
+const updateUser = `-- name: UpdateUser :one
+
+UPDATE users
+SET updated_at = NOW(), email = $1, hashed_password = $2
+WHERE id = $3
+
+RETURNING id, email, created_at, updated_at
+`
+
+type UpdateUserParams struct {
+	Email          string    `json:"email"`
+	HashedPassword string    `json:"hashed_password"`
+	ID             uuid.UUID `json:"id"`
+}
+
+type UpdateUserRow struct {
+	ID        uuid.UUID `json:"id"`
+	Email     string    `json:"email"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error) {
+	row := q.db.QueryRowContext(ctx, updateUser, arg.Email, arg.HashedPassword, arg.ID)
+	var i UpdateUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

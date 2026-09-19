@@ -17,4 +17,5 @@ func startUp(handler *http.ServeMux, cfg *internal.ApiConfig) {
 	handler.HandleFunc("POST /api/login", cfg.HandlerLogin)
 	handler.HandleFunc("POST /api/revoke", cfg.Revoke)
 	handler.HandleFunc("POST /api/refresh", cfg.Refresh)
+	handler.HandleFunc("PUT /api/users", cfg.UpdateUserLogin)
 }

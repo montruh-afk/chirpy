@@ -1,14 +1,12 @@
 package internal
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
 	auth "github.com/montruh-afk/chirpy/internal/authentication"
 	"github.com/montruh-afk/chirpy/internal/database"
 	"log"
 	"net/http"
-	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -66,32 +64,16 @@ func (cfg *ApiConfig) Reset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
-	type getuser struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-
-	createUser := getuser{}
-
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&createUser); err != nil {
-		log.Printf("Something broke while attempting to decode json: %s", err)
+	createUser, err := verifyDetails(r)
+	if err != nil {
+		respondWithError(w, 500, "Something broke while attempting to verify input", err)
 		return
 	}
-	if !strings.Contains(createUser.Email, "@") && !strings.Contains(strings.ToLower(createUser.Email), ".co") {
-		respondWithError(w, 500, "Invalid email", nil)
-		return
-	}
-
+	
 	ctx := r.Context()
-	//Chech if the user exists to avoid panic from sql (unique key constrain violation)
+	//Check if the user exists to avoid sql unique key constraint violation
 	if _, err := cfg.Db.GetuserByEmail(ctx, createUser.Email); err == nil {
 		respondWithError(w, http.StatusConflict, "An account with that email already exists", nil)
-		return
-	}
-
-	if len(createUser.Password) < 4 { //for tests alone, change this later
-		respondWithError(w, http.StatusBadRequest, "Password length should be 8 or more characters", nil)
 		return
 	}
 
@@ -99,14 +81,12 @@ func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondWithError(w, http.StatusForbidden, "Something went wrong", err)
 		return
-	}
-
-	deets := database.CreateUserParams{
+	} 
+	user, err := cfg.Db.CreateUser(ctx, database.CreateUserParams{
 		Email:          createUser.Email,
 		HashedPassword: hashedPass,
-	}
+	})
 
-	user, err := cfg.Db.CreateUser(ctx, deets)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't create user", err)
 		return
@@ -143,13 +123,12 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 401, "User does not exist", err)
 		return
 	}
-	dbChirp := database.CreateChirpParams{
-		UserID: valid.ID,
-		Body:   params.Body,
-	}
 
 	
-	data, err := cfg.Db.CreateChirp(ctx, dbChirp)
+	data, err := cfg.Db.CreateChirp(ctx, database.CreateChirpParams{
+		UserID: valid.ID,
+		Body:   params.Body,
+	})
 	if err != nil {
 		log.Printf("Something went wrong: %s", err)
 		respondWithError(w, http.StatusInternalServerError, "Could not create chirp", err)
@@ -201,15 +180,9 @@ func (cfg *ApiConfig) GetChirp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *ApiConfig) HandlerLogin(w http.ResponseWriter, r *http.Request) {
-	type login struct {
-		Email    string `json:"email"`
-		Password string `json:"Password"`
-	}
-
 	//user instance
-	deets := login{}
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&deets); err != nil {
+	deets, err := verifyDetails(r)
+	if err != nil {
 		respondWithError(w, 500, "Something went wrong while attempting to handle incoming request", err)
 		return
 	}
@@ -310,4 +283,41 @@ func (cfg *ApiConfig) Revoke(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJson(w, 204, nil)
 
+}
+
+func (cfg *ApiConfig) UpdateUserLogin(w http.ResponseWriter, r *http.Request) {
+	accessToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, "Invalid access token", err)
+		return
+	}
+
+	userID, err := auth.ValidateJWT(accessToken, cfg.TknScrt)
+	if err != nil {
+		respondWithError(w, 401, "Invalid access token", err)
+		return
+	}
+
+	deets, err := verifyDetails(r)
+	if err != nil {
+		respondWithError(w, 500, "Something broke while attempting to verify input", err)
+		return
+	}
+
+	hashed_pass, err := auth.HashPassword(deets.Password)
+	if err != nil {
+		respondWithError(w, 500, "Could not store updated password, your records remain unchanged", err)
+		return
+	}
+	updatedUser, err := cfg.Db.UpdateUser(r.Context(), database.UpdateUserParams{
+		Email: deets.Email,
+		ID: userID,
+		HashedPassword: hashed_pass,
+	})
+	if err != nil {
+		respondWithError(w, 401, "Something went wrong", err)
+		return
+	}
+
+	respondWithJson(w, 200, &updatedUser)
 }

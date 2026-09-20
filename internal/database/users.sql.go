@@ -23,7 +23,7 @@ VALUES (
     $1,
     $2
 )
-RETURNING id, email, created_at, updated_at
+RETURNING id, email, created_at, updated_at, is_chirpy_red
 `
 
 type CreateUserParams struct {
@@ -32,10 +32,11 @@ type CreateUserParams struct {
 }
 
 type CreateUserRow struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          uuid.UUID `json:"id"`
+	Email       string    `json:"email"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	IsChirpyRed bool      `json:"is_chirpy_red"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
@@ -46,6 +47,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
@@ -63,7 +65,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
 
 const getUserByID = `-- name: GetUserByID :one
 
-SELECT id, created_at, updated_at, email, hashed_password FROM users WHERE id = $1
+SELECT id, created_at, updated_at, email, hashed_password, is_chirpy_red FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -75,6 +77,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
@@ -82,17 +85,18 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 const getUserFromRefreshToken = `-- name: GetUserFromRefreshToken :one
 
 
-SELECT users.id, users.email, users.created_at, users.updated_at, refresh_tokens.token FROM refresh_tokens 
+SELECT users.id, users.email, users.created_at, users.updated_at, users.is_chirpy_red, refresh_tokens.token FROM refresh_tokens 
 INNER JOIN users ON refresh_tokens.user_id = users.id 
 WHERE refresh_tokens.token = $1
 `
 
 type GetUserFromRefreshTokenRow struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Token     string    `json:"token"`
+	ID          uuid.UUID `json:"id"`
+	Email       string    `json:"email"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	IsChirpyRed bool      `json:"is_chirpy_red"`
+	Token       string    `json:"token"`
 }
 
 func (q *Queries) GetUserFromRefreshToken(ctx context.Context, token string) (GetUserFromRefreshTokenRow, error) {
@@ -103,6 +107,7 @@ func (q *Queries) GetUserFromRefreshToken(ctx context.Context, token string) (Ge
 		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsChirpyRed,
 		&i.Token,
 	)
 	return i, err
@@ -111,7 +116,7 @@ func (q *Queries) GetUserFromRefreshToken(ctx context.Context, token string) (Ge
 const getuserByEmail = `-- name: GetuserByEmail :one
 
 
-SELECT id, created_at, updated_at, email, hashed_password FROM users WHERE email = $1
+SELECT id, created_at, updated_at, email, hashed_password, is_chirpy_red FROM users WHERE email = $1
 `
 
 func (q *Queries) GetuserByEmail(ctx context.Context, email string) (User, error) {
@@ -123,6 +128,7 @@ func (q *Queries) GetuserByEmail(ctx context.Context, email string) (User, error
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
@@ -138,13 +144,25 @@ func (q *Queries) ResetUsers(ctx context.Context) error {
 	return err
 }
 
+const setChirpyRed = `-- name: SetChirpyRed :exec
+
+
+UPDATE users
+SET updated_at = NOW(), is_chirpy_red = true WHERE id = $1
+`
+
+func (q *Queries) SetChirpyRed(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, setChirpyRed, id)
+	return err
+}
+
 const updateUser = `-- name: UpdateUser :one
 
 UPDATE users
 SET updated_at = NOW(), email = $1, hashed_password = $2
 WHERE id = $3
 
-RETURNING id, email, created_at, updated_at
+RETURNING id, email, created_at, updated_at, is_chirpy_red
 `
 
 type UpdateUserParams struct {
@@ -154,10 +172,11 @@ type UpdateUserParams struct {
 }
 
 type UpdateUserRow struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          uuid.UUID `json:"id"`
+	Email       string    `json:"email"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	IsChirpyRed bool      `json:"is_chirpy_red"`
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error) {
@@ -168,6 +187,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateU
 		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }

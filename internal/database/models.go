@@ -6,9 +6,8 @@ package database
 
 import (
 	"database/sql"
-	"time"
-
 	"github.com/google/uuid"
+	"time"
 )
 
 type Chirp struct {
@@ -34,6 +33,7 @@ type User struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 	Email          string    `json:"email"`
 	HashedPassword string    `json:"-"`
-	Token          string    `json:"token"`
 	RefreshToken   string    `json:"refresh_token"`
+	Token          string    `json:"token"`
+	IsChirpyRed    bool      `json:"is_chirpy_red"`
 }

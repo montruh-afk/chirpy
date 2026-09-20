@@ -3,9 +3,9 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"github.com/google/uuid"
+	"github.com/montruh-afk/chirpy/internal/database"
 )
 
 const (
@@ -28,7 +28,6 @@ func validateChirp(r *http.Request) (chirp, error) {
 
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&params); err != nil {
-		log.Println(err)
 		return params, fmt.Errorf("Something went wrong while attempting to decode json: %s", err)
 	}
 
@@ -40,4 +39,23 @@ func validateChirp(r *http.Request) (chirp, error) {
 		params.Body = checkProfane(params.Body)
 	}
 	return params, nil
+}
+
+func fetchChirp(cfg *ApiConfig, r *http.Request) (database.Chirp, error) {
+	chirpID := r.PathValue("chirpID")
+	if len(chirpID) < 1 {
+		return  database.Chirp{}, fmt.Errorf("Required parameter omitted")
+	}
+	if err := uuid.Validate(chirpID); err != nil {
+		return database.Chirp{}, fmt.Errorf("Invalid id: %s", err)
+	}
+	id, err := uuid.Parse(chirpID)
+	if err != nil {
+		return database.Chirp{}, fmt.Errorf("Could not verify the id provided: %v", err)
+	}
+	chirp, err := cfg.Db.GetChirp(r.Context(), id)
+	if err != nil {
+		return database.Chirp{}, fmt.Errorf("Chirp with ID %v not found: %v", chirpID, err)
+	}
+	return chirp, nil
 }

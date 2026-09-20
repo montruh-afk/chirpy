@@ -1,14 +1,16 @@
 package internal
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
-	auth "github.com/montruh-afk/chirpy/internal/authentication"
-	"github.com/montruh-afk/chirpy/internal/database"
 	"log"
 	"net/http"
 	"sync/atomic"
 	"time"
+
+	"github.com/google/uuid"
+	auth "github.com/montruh-afk/chirpy/internal/authentication"
+	"github.com/montruh-afk/chirpy/internal/database"
 )
 
 type ApiConfig struct {
@@ -109,7 +111,7 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Current user id %v\n", userid)
+	log.Printf("Current user id: %v\n", userid)
 
 	params, err := validateChirp(r)
 	if err != nil {
@@ -130,7 +132,6 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 		Body:   params.Body,
 	})
 	if err != nil {
-		log.Printf("Something went wrong: %s", err)
 		respondWithError(w, http.StatusInternalServerError, "Could not create chirp", err)
 		return
 	}
@@ -142,7 +143,6 @@ func (cfg *ApiConfig) GetChirps(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	chirps, err := cfg.Db.GetChirps(ctx)
 	if err != nil {
-		log.Println(err)
 		respondWithError(w, http.StatusInternalServerError, "Something went wrong while attempting to retrieve from server", err)
 		return
 	}
@@ -151,31 +151,12 @@ func (cfg *ApiConfig) GetChirps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *ApiConfig) GetChirp(w http.ResponseWriter, r *http.Request) {
-	param := r.PathValue("chirpID")
-	if len(param) < 1 {
-		respondWithError(w, 404, "Required parameter ommited", nil)
-		return
-	}
-	if err := uuid.Validate(param); err != nil {
-		log.Println(err)
-		respondWithError(w, 404, "Invalid id provided", nil)
-		return
-	}
-	id, err := uuid.Parse(param)
+	chirp, err := fetchChirp(cfg, r)
 	if err != nil {
-		log.Println(err)
-		respondWithError(w, 404, "Invalid id type", nil)
+		respondWithError(w, 404, "Something went wrong", err)
 		return
 	}
-
-	ctx := r.Context()
-
-	chirp, err := cfg.Db.GetChirp(ctx, id)
-	if err != nil {
-		log.Println(err)
-		respondWithError(w, 404, "Something went wrong while attempting to fetch from our records", nil)
-		return
-	}
+	
 	respondWithJson(w, 200, &chirp)
 }
 
@@ -190,7 +171,6 @@ func (cfg *ApiConfig) HandlerLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userDB, err := cfg.Db.GetuserByEmail(ctx, deets.Email)
 	if err != nil {
-		log.Println(err)
 		respondWithError(w, 401, "Incorrect email or password", nil)
 		return
 	}
@@ -320,4 +300,71 @@ func (cfg *ApiConfig) UpdateUserLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJson(w, 200, &updatedUser)
+}
+
+func (cfg *ApiConfig) DeleteChirp(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, "Invalid token", err)
+		return
+	}
+
+	valid, err := auth.ValidateJWT(token, cfg.TknScrt)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorised token", err)
+		return
+	}
+
+	chirp, err := fetchChirp(cfg, r)
+	if err != nil {
+		respondWithError(w, 404, "Something went wrong", err)
+		return
+	}
+	if chirp.UserID != valid {
+		respondWithError(w, 403, "You do not have the required permissions to carry out that action", nil)
+		return
+	}
+	if err := cfg.Db.DeleteChirp(r.Context(), chirp.ID); err != nil {
+		respondWithError(w, 500, "Something went wrong", err)
+		return
+	}
+
+	respondWithJson(w, 204, nil)
+}
+
+func (cfg *ApiConfig) HandlerPolka(w http.ResponseWriter, r *http.Request) {
+	type eventHandler struct {
+		Event string`json:"event"`
+		Data struct {
+			UserId string `json:"user_id"`
+		}`json:"data"`
+	}
+
+	event := eventHandler{}
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&event); err != nil {
+		respondWithError(w, 500, "Something broke on our end", err)
+		return
+	}
+	if event.Event != "user.upgraded" {
+		respondWithJson(w, 204, nil)
+		return
+	}
+	
+	if err := uuid.Validate(event.Data.UserId); err != nil {
+		respondWithError(w, http.StatusForbidden, "Invalid user id format", err)
+		return
+	}
+
+	id, err := uuid.Parse(event.Data.UserId)
+	if err != nil {
+		respondWithError(w, http.StatusForbidden, "Invalid user id", err)
+		return
+	}
+	if err := cfg.Db.SetChirpyRed(r.Context(), id); err != nil {
+		respondWithError(w, 404, "Something went wrong", err)
+		return
+	}
+
+	respondWithJson(w, 204, nil)
 }

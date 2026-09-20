@@ -18,4 +18,6 @@ func startUp(handler *http.ServeMux, cfg *internal.ApiConfig) {
 	handler.HandleFunc("POST /api/revoke", cfg.Revoke)
 	handler.HandleFunc("POST /api/refresh", cfg.Refresh)
 	handler.HandleFunc("PUT /api/users", cfg.UpdateUserLogin)
+	handler.HandleFunc("DELETE /api/chirps/{chirpID}", cfg.DeleteChirp)
+	handler.HandleFunc("POST /api/polka/webhooks", cfg.HandlerPolka)
 }

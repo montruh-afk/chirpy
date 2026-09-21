@@ -32,15 +32,15 @@ func CheckPasswordHash(password, hash string) (bool, error) {
 }
 
 func GetBearerToken(headers http.Header) (string, error) {
-	auth := headers.Get("Authorization")
+	authHeader := headers.Get("Authorization")
 
-	if auth == "" {
-		return auth, errors.New("Unauthorised: Please login in to access features")
+	if authHeader == "" {
+		return authHeader, errors.New("Unauthorised: Please login in to access features")
 	}
-	if !strings.HasPrefix(auth, "Bearer ") {
+	if !strings.HasPrefix(authHeader, "Bearer ") {
 		return "", errors.New("Malformed authorization header received")
 	}
-	token := strings.Replace(auth, "Bearer", "", 1)
+	token := strings.Replace(authHeader, "Bearer", "", 1)
 	return strings.TrimSpace(token), nil
 }
 
@@ -48,4 +48,17 @@ func MakeRefreshToken() string {
 	b := make([]byte, 32)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func GetAPIKey(headers http.Header) (string, error) {
+	authHeader := headers.Get("Authorization")
+
+	if authHeader == "" {
+		return authHeader, errors.New("Unauthorized")
+	}
+	if !strings.HasPrefix(authHeader, "ApiKey ") {
+		return "", errors.New("Malformed authorization header received")
+	}
+	apiKey := strings.Replace(authHeader, "ApiKey", "", 1)
+	return strings.TrimSpace(apiKey), nil
 }

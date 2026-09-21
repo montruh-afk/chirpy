@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -19,6 +20,7 @@ type ApiConfig struct {
 	Platform       string
 	TknScrt        string
 	Exp            string
+	Polka_key      string
 }
 
 type Duration struct {
@@ -71,7 +73,7 @@ func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "Something broke while attempting to verify input", err)
 		return
 	}
-	
+
 	ctx := r.Context()
 	//Check if the user exists to avoid sql unique key constraint violation
 	if _, err := cfg.Db.GetuserByEmail(ctx, createUser.Email); err == nil {
@@ -83,7 +85,7 @@ func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondWithError(w, http.StatusForbidden, "Something went wrong", err)
 		return
-	} 
+	}
 	user, err := cfg.Db.CreateUser(ctx, database.CreateUserParams{
 		Email:          createUser.Email,
 		HashedPassword: hashedPass,
@@ -126,7 +128,6 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	
 	data, err := cfg.Db.CreateChirp(ctx, database.CreateChirpParams{
 		UserID: valid.ID,
 		Body:   params.Body,
@@ -141,11 +142,29 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *ApiConfig) GetChirps(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	if s := r.URL.Query().Get("author_id"); s != "" {
+		resp, err := fetchUserChirps(cfg, s, ctx)
+		if err != nil {
+			respondWithError(w, 404, "No chirps from specified user", err)
+			return
+		}
+		respondWithJson(w, 200, &resp)
+		return
+		
+	}
+	
 	chirps, err := cfg.Db.GetChirps(ctx)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Something went wrong while attempting to retrieve from server", err)
 		return
 	}
+
+	if toSort := r.URL.Query().Get("sort"); toSort == "desc" {
+		sort.Slice(chirps, func(i, j int) bool {
+		return chirps[i].CreatedAt.After(chirps[j].CreatedAt)
+	})
+	}
+	
 
 	respondWithJson(w, 200, &chirps)
 }
@@ -156,7 +175,7 @@ func (cfg *ApiConfig) GetChirp(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 404, "Something went wrong", err)
 		return
 	}
-	
+
 	respondWithJson(w, 200, &chirp)
 }
 
@@ -290,8 +309,8 @@ func (cfg *ApiConfig) UpdateUserLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updatedUser, err := cfg.Db.UpdateUser(r.Context(), database.UpdateUserParams{
-		Email: deets.Email,
-		ID: userID,
+		Email:          deets.Email,
+		ID:             userID,
 		HashedPassword: hashed_pass,
 	})
 	if err != nil {
@@ -333,11 +352,21 @@ func (cfg *ApiConfig) DeleteChirp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *ApiConfig) HandlerPolka(w http.ResponseWriter, r *http.Request) {
+	apiKey, err := auth.GetAPIKey(r.Header)
+	if err != nil{
+		respondWithError(w, 401, "Unauthorized", err)
+		return
+	}
+	if apiKey != cfg.Polka_key {
+		respondWithError(w, 401, "Unauthorized", err)
+		return
+	}
+
 	type eventHandler struct {
-		Event string`json:"event"`
-		Data struct {
+		Event string `json:"event"`
+		Data  struct {
 			UserId string `json:"user_id"`
-		}`json:"data"`
+		} `json:"data"`
 	}
 
 	event := eventHandler{}
@@ -350,7 +379,7 @@ func (cfg *ApiConfig) HandlerPolka(w http.ResponseWriter, r *http.Request) {
 		respondWithJson(w, 204, nil)
 		return
 	}
-	
+
 	if err := uuid.Validate(event.Data.UserId); err != nil {
 		respondWithError(w, http.StatusForbidden, "Invalid user id format", err)
 		return

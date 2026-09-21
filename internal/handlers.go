@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"github.com/google/uuid"
 	"github.com/montruh-afk/chirpy/internal/database"
+	"context"
 )
 
 const (
@@ -58,4 +59,16 @@ func fetchChirp(cfg *ApiConfig, r *http.Request) (database.Chirp, error) {
 		return database.Chirp{}, fmt.Errorf("Chirp with ID %v not found: %v", chirpID, err)
 	}
 	return chirp, nil
+}
+
+func fetchUserChirps(cfg *ApiConfig, author string, ctx context.Context) ([]database.Chirp, error) {
+	if err := uuid.Validate(author); err != nil {
+		return []database.Chirp{}, err
+	}
+	id, err := uuid.Parse(author)
+	if err != nil {
+		return []database.Chirp{}, err
+	}
+	chirps, err := cfg.Db.GetChirpsByUser(ctx, id)
+	return chirps, nil
 }

@@ -57,6 +57,7 @@ func main() {
 		Platform:       os.Getenv("PLATFORM"),
 		TknScrt: os.Getenv("HASHTEXT"),
 		Exp: os.Getenv("EXP"),
+		Polka_key: os.Getenv("POLKA_KEY"),
 	}
 
 	if len(cfg.Exp) < 1 {
